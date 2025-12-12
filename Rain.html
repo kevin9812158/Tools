@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>打字雨 Mobile</title>
+<style>
+    :root {
+        --bg-color: #0d1b2a;
+        --sidebar-bg: #1b263b;
+        --text-color: #e0e1dd;
+        --accent-color: #00b4d8;
+        --danger-color: #e63946;
+        --success-color: #2a9d8f;
+        --input-bg: #415a77;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+        margin: 0;
+        padding: 0;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        /* 使用 dvh (dynamic viewport height) 解決 iOS Safari 網址列遮擋問題 */
+        height: 100dvh; 
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* === 頂部導航列 (手機新增) === */
+    #navbar {
+        height: 50px;
+        background-color: #111;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 15px;
+        z-index: 50;
+        border-bottom: 1px solid #333;
+    }
+    
+    #menu-btn {
+        background: none;
+        border: none;
+        color: var(--accent-color);
+        font-size: 1.5rem;
+        cursor: pointer;
+    }
+
+    #game-stats-mini {
+        font-size: 0.9rem;
+        font-family: monospace;
+        color: #ddd;
+    }
+
+    /* === 側邊欄 (改為抽屜式) === */
+    #sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 85%;
+        height: 100%;
+        background-color: var(--sidebar-bg);
+        padding: 20px;
+        transform: translateX(-100%); /* 預設隱藏 */
+        transition: transform 0.3s ease;
+        z-index: 100;
+        overflow-y: auto;
+        box-shadow: 2px 0 10px rgba(0,0,0,0.5);
+    }
+
+    #sidebar.open {
+        transform: translateX(0);
+    }
+
+    /* 遮罩 */
+    #overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.7);
+        z-index: 90;
+        display: none;
+    }
+    #overlay.show { display: block; }
+
+    /* === 遊戲區域 === */
+    #game-area {
+        flex: 1; /* 佔滿剩餘空間 */
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    #stage {
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+        /* 簡化背景以提升手機效能 */
+        background: linear-gradient(to bottom, #0d1b2a 0%, #1b263b 100%);
+    }
+
+    /* 雨滴 */
+    .word-drop {
+        position: absolute;
+        color: #90e0ef;
+        font-size: 1.1rem; /* 手機字體稍微調小 */
+        font-weight: bold;
+        background: rgba(13, 27, 42, 0.9);
+        padding: 4px 8px;
+        border-radius: 4px;
+        border-top: 2px solid var(--accent-color);
+        z-index: 5;
+        white-space: nowrap;
+        /* 確保點擊不到，避免手機誤觸 */
+        pointer-events: none; 
+    }
+    .word-drop.hit { color: #fff; background: var(--success-color); opacity: 0; transform: scale(1.5); transition: 0.2s; }
+    .word-drop.miss { background: var(--danger-color); }
+
+    /* === 輸入區 (底部固定) === */
+    #input-zone {
+        padding: 10px;
+        background-color: #0b131c;
+        border-top: 1px solid #333;
+        /* 重要：確保鍵盤彈出時這裡是可見的 */
+        flex-shrink: 0; 
+    }
+
+    /* 使用 form 包裹 input 以支援手機鍵盤的 Go/Enter */
+    #game-form {
+        display: flex;
+        gap: 10px;
+    }
+
+    #answer-input {
+        flex: 1;
+        height: 45px;
+        font-size: 1.2rem;
+        padding: 0 10px;
+        border-radius: 8px;
+        border: none;
+        background-color: #ecf0f1;
+        color: #333;
+        /* 防止 iOS 縮放 */
+        font-size: 16px; 
+    }
+    
+    #answer-input:focus {
+        outline: 2px solid var(--accent-color);
+    }
+
+    /* UI 元件樣式 */
+    h2, h3 { color: var(--accent-color); margin-top: 15px; margin-bottom: 5px; }
+    textarea { width: 100%; height: 100px; background: #222; color: #fff; border: 1px solid #555; }
+    
+    button {
+        width: 100%; padding: 12px; margin-top: 10px; border-radius: 8px; border: none;
+        font-size: 1rem; font-weight: bold; cursor: pointer; color: white;
+    }
+    .btn-primary { background-color: var(--accent-color); }
+    .btn-danger { background-color: var(--danger-color); }
+    .btn-close { background-color: #555; margin-bottom: 20px; }
+
+    .control-group { margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }
+    label { display: block; margin: 5px 0; font-size: 0.9rem; }
+    
+    #feedback-msg { margin-top:10px; padding:5px; display:none; border-radius:4px; font-size:0.9rem; }
+    .success-msg { background: rgba(42, 157, 143, 0.3); color: var(--success-color); }
+    .error-msg { background: rgba(230, 57, 70, 0.3); color: var(--danger-color); }
+
+</style>
+</head>
+<body>
+
+<nav id="navbar">
+    <button id="menu-btn">☰ 設定</button>
+    <div id="game-stats-mini">Score: <span id="mini-score">0</span> | Lv.<span id="mini-level">1</span></div>
+</nav>
+
+<div id="overlay"></div>
+
+<div id="sidebar">
+    <button class="btn-close" id="close-menu">✕ 關閉選單</button>
+    
+    <h2>🌧️ 設定與詞庫</h2>
+    
+    <div class="control-group">
+        <button id="btn-start" class="btn-primary">▶ 開始遊戲</button>
+        <button id="btn-stop" class="btn-danger" style="display:none;">⏹ 停止遊戲</button>
+    </div>
+
+    <div class="control-group">
+        <h3>判定設定</h3>
+        <label><input type="checkbox" id="opt-kana" checked> 假名通融 (あ=ア)</label>
+        <label><input type="checkbox" id="opt-ignore-note" checked> 忽略括號備註</label>
+        <label><input type="checkbox" id="opt-multi" checked> 多答案 (/分隔)</label>
+    </div>
+
+    <div class="control-group">
+        <h3>詞庫來源</h3>
+        <div>
+            <label><input type="radio" name="preset" value="N5"> N5</label>
+            <label><input type="radio" name="preset" value="N4"> N4</label>
+            <label><input type="radio" name="preset" value="N3" checked> N3</label>
+            <label><input type="radio" name="preset" value="N2"> N2</label>
+            <label><input type="radio" name="preset" value="N1"> N1</label>
+        </div>
+        <textarea id="import-area" placeholder="貼上自訂單字...&#10;中文|日文"></textarea>
+        <label><input type="checkbox" id="opt-merge"> 合併內建與自訂</label>
+        <button id="btn-import" style="background:#444;">匯入檢查</button>
+        <div id="feedback-msg"></div>
+    </div>
+</div>
+
+<div id="game-area">
+    <div id="stage"></div>
+    <div id="input-zone">
+        <form id="game-form" onsubmit="return false;" autocomplete="off">
+            <input type="text" id="answer-input" placeholder="輸入日文..." enterkeyhint="go" autocapitalize="off" autocorrect="off">
+        </form>
+    </div>
+</div>
+
+<script>
+/* === 遊戲邏輯 (與電腦版相同，僅微調 UI 控制) === 
+*/
+
+// 資料與狀態
+const PRESETS = {
+    N5: [{q:"我", a:["わたし"]}, {q:"學生", a:["がくせい"]}, {q:"水", a:["みず"]}, {q:"吃", a:["たべる"]}, {q:"什麼", a:["なに"]}],
+    N4: [{q:"比較", a:["くらべる"]}, {q:"住所", a:["じゅうしょ"]}, {q:"特別", a:["とくべつ"]}, {q:"危險", a:["あぶない"]}],
+    N3: [{q:"極好的", a:["すてき"]}, {q:"放棄", a:["あきらめる"]}, {q:"即使如此", a:["それでも"]}, {q:"技術", a:["ぎじゅつ"]}],
+    N2: [{q:"依賴", a:["いらい"]}, {q:"永遠", a:["えいえん"]}, {q:"影響", a:["えいきょう"]}, {q:"傾向", a:["けいこう"]}],
+    N1: [{q:"壓倒", a:["あっとう"]}, {q:"運用", a:["うんよう"]}, {q:"緩和", a:["かんわ"]}, {q:"均衡", a:["きんこう"]}]
+};
+
+const GameState = {
+    isPlaying: false,
+    words: [],
+    activeDrops: [],
+    score: 0,
+    level: 1,
+    startTime: 0,
+    lastFrameTime: 0,
+    spawnTimer: 0
+};
+
+// DOM 元素
+const el = {
+    sidebar: document.getElementById('sidebar'),
+    overlay: document.getElementById('overlay'),
+    menuBtn: document.getElementById('menu-btn'),
+    closeBtn: document.getElementById('close-menu'),
+    stage: document.getElementById('stage'),
+    input: document.getElementById('answer-input'),
+    form: document.getElementById('game-form'),
+    miniScore: document.getElementById('mini-score'),
+    miniLevel: document.getElementById('mini-level'),
+    importArea: document.getElementById('import-area'),
+    feedback: document.getElementById('feedback-msg'),
+    btnStart: document.getElementById('btn-start'),
+    btnStop: document.getElementById('btn-stop'),
+    btnImport: document.getElementById('btn-import')
+};
+
+// === 手機版選單控制 ===
+function toggleMenu(show) {
+    if (show) {
+        el.sidebar.classList.add('open');
+        el.overlay.classList.add('show');
+    } else {
+        el.sidebar.classList.remove('open');
+        el.overlay.classList.remove('show');
+    }
+}
+el.menuBtn.addEventListener('click', () => toggleMenu(true));
+el.closeBtn.addEventListener('click', () => toggleMenu(false));
+el.overlay.addEventListener('click', () => toggleMenu(false));
+
+// === 核心邏輯 (共用) ===
+function normalize(str) {
+    let s = str.replace(/　/g, ' ').trim();
+    if (document.getElementById('opt-ignore-note').checked) {
+        s = s.replace(/\([^\)]*\)/g, '').replace(/（[^）]*）/g, '');
+        s = s.replace(/^[～〜~]+/, '').replace(/[～〜~]+$/, '');
+    }
+    s = s.toLowerCase();
+    if (document.getElementById('opt-kana').checked) {
+        s = s.replace(/[\u30a1-\u30f6]/g, m => String.fromCharCode(m.charCodeAt(0) - 0x60));
+    }
+    return s.trim();
+}
+
+function checkAnswer(input, answers) {
+    const nInput = normalize(input);
+    return answers.some(ans => normalize(ans) === nInput && nInput !== "");
+}
+
+function prepareWords() {
+    // 簡單的詞庫準備邏輯
+    let presetKey = document.querySelector('input[name="preset"]:checked').value;
+    let words = JSON.parse(JSON.stringify(PRESETS[presetKey] || PRESETS.N3));
+    
+    const rawImport = el.importArea.value.trim();
+    if (rawImport) {
+        const custom = rawImport.split('\n').map(line => {
+            const p = line.split('|');
+            if (p.length!==2) return null;
+            return {q: p[0].trim(), a: p[1].split('/').map(x=>x.trim())};
+        }).filter(x=>x);
+        
+        if (document.getElementById('opt-merge').checked) {
+            words = words.concat(custom);
+        } else if (custom.length > 0) {
+            words = custom;
+        }
+    }
+    return words;
+}
+
+// === 遊戲引擎 ===
+function startGame() {
+    // 關閉選單，讓玩家看到畫面
+    toggleMenu(false);
+    
+    GameState.words = prepareWords();
+    if(GameState.words.length === 0) { alert("無單字資料"); return; }
+
+    GameState.isPlaying = true;
+    GameState.score = 0;
+    GameState.level = 1;
+    GameState.startTime = Date.now();
+    GameState.lastFrameTime = Date.now();
+    GameState.activeDrops = [];
+    
+    el.stage.innerHTML = '';
+    el.input.value = '';
+    el.input.focus(); // 手機上這會叫出鍵盤
+    
+    el.btnStart.style.display = 'none';
+    el.btnStop.style.display = 'block';
+
+    requestAnimationFrame(gameLoop);
+}
+
+function stopGame() {
+    GameState.isPlaying = false;
+    el.btnStart.style.display = 'block';
+    el.btnStop.style.display = 'none';
+    alert(`遊戲結束！得分: ${GameState.score}`);
+}
+
+function gameLoop() {
+    if (!GameState.isPlaying) return;
+    
+    const now = Date.now();
+    const dt = now - GameState.lastFrameTime;
+    GameState.lastFrameTime = now;
+    
+    // 難度設定
+    const timeFactor = Math.min((now - GameState.startTime) / 60000, 5);
+    GameState.spawnTimer += dt;
+    
+    // 生成 (手機版生成稍微慢一點，避免畫面太亂)
+    if (GameState.spawnTimer > Math.max(2500 - (timeFactor*400), 800)) {
+        spawnDrop();
+        GameState.spawnTimer = 0;
+    }
+
+    // 移動
+    const baseSpeed = 80; // 手機版速度稍慢
+    const speedMult = 1 + (timeFactor * 0.4);
+    const limitY = el.stage.clientHeight;
+
+    // 反向迴圈以利刪除
+    for (let i = GameState.activeDrops.length - 1; i >= 0; i--) {
+        let d = GameState.activeDrops[i];
+        d.y += baseSpeed * speedMult * dt / 1000;
+        d.el.style.transform = `translateY(${d.y}px)`;
+        
+        if (d.y > limitY - 20) {
+            d.el.classList.add('miss');
+            GameState.activeDrops.splice(i, 1);
+            GameState.score = Math.max(0, GameState.score - 5);
+            updateUI();
+            setTimeout(()=>d.el.remove(), 200);
+        }
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+function spawnDrop() {
+    const w = GameState.words[Math.floor(Math.random() * GameState.words.length)];
+    const div = document.createElement('div');
+    div.classList.add('word-drop');
+    div.textContent = w.q;
+    
+    // 手機寬度隨機 (留邊距)
+    const maxX = el.stage.clientWidth - 80;
+    div.style.left = Math.random() * maxX + 'px';
+    div.style.top = '0px';
+    
+    el.stage.appendChild(div);
+    GameState.activeDrops.push({el: div, data: w, y: -30});
+}
+
+function updateUI() {
+    el.miniScore.textContent = GameState.score;
+    // 每 30 秒升一級
+    const lv = Math.floor((Date.now() - GameState.startTime)/30000) + 1;
+    el.miniLevel.textContent = lv;
+}
+
+// === 輸入處理 (手機鍵盤優化) ===
+// 監聽 Form Submit (對應手機鍵盤的 Go/Enter)
+el.form.addEventListener('submit', (e) => {
+    e.preventDefault(); // 防止刷新
+    const val = el.input.value;
+    if(!val) return;
+
+    let hit = false;
+    // 優先比對最下面的雨滴
+    GameState.activeDrops.sort((a,b) => b.y - a.y);
+    
+    for (let i=0; i<GameState.activeDrops.length; i++) {
+        if (checkAnswer(val, GameState.activeDrops[i].data.a)) {
+            const drop = GameState.activeDrops[i];
+            drop.el.classList.add('hit');
+            GameState.activeDrops.splice(i, 1);
+            setTimeout(()=>drop.el.remove(), 200);
+            
+            GameState.score += 10;
+            updateUI();
+            hit = true;
+            break;
+        }
+    }
+
+    if (hit) {
+        el.input.value = ''; // 答對才清空
+    } else {
+        el.input.style.backgroundColor = '#5c2b29'; // 錯誤提示
+        setTimeout(()=>el.input.style.backgroundColor = '#ecf0f1', 150);
+        // 手機上通常全選比較好修改
+        el.input.select(); 
+    }
+});
+
+// 匯入按鈕簡單邏輯
+el.btnImport.addEventListener('click', () => {
+    if(el.importArea.value) {
+        el.feedback.textContent = "✅ 已暫存";
+        el.feedback.style.display = 'block';
+        el.feedback.className = 'success-msg';
+        localStorage.setItem('mobile-rain-custom', el.importArea.value);
+    }
+});
+
+// Init
+el.btnStart.addEventListener('click', startGame);
+el.btnStop.addEventListener('click', stopGame);
+if(localStorage.getItem('mobile-rain-custom')) {
+    el.importArea.value = localStorage.getItem('mobile-rain-custom');
+}
+
+</script>
+</body>
+</html>
